@@ -1,0 +1,1 @@
+cp ./build/hello_pio.uf2 /media/gvaldez/RPI-RP2
