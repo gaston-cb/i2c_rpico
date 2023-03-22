@@ -16,8 +16,8 @@ target_sources(hello_pio PRIVATE hello.c)
 
 target_link_libraries(hello_pio PRIVATE
         pico_stdlib
-        hardware_pio
         hardware_dma
+        hardware_i2c
         )
 
 pico_enable_stdio_usb(hello_pio 1)
