@@ -21,7 +21,9 @@
 
 
 void initI2C(uint port_a, uint port_b) ; 
-void dma_handler(void); 
+void dma_handler_rx(void); 
+void dma_handler_tx(void); 
+
 void dma_init_tx() ; 
 void dma_init_rx() ; 
 
@@ -32,6 +34,7 @@ uint dma_rx ; //dma_rx channel
 uint8_t rx_i2c[BUFFER_RX] ; 
 uint8_t tx_i2c[BUFFER_RX] ; 
 bool dma_end_rx = false ; 
+bool dma_end_tx = false ; 
 
 
 
@@ -61,10 +64,20 @@ void main() {
             printf("rxI2C: ") ;    
             for ( uint i = 0; i<BUFFER_RX; i++){
                 printf("%02x", rx_i2c[i]) ; 
+                rx_i2c[i] = 0 ; 
             }
             printf("\r\n") ; 
-
         }
+        if (dma_end_tx == true){ 
+            dma_end_tx = false ; 
+            printf("txI2C: ") ;    
+            for ( uint i = 0; i<BUFFER_RX; i++){
+                printf("%02x", tx_i2c[i]) ; 
+            }
+            printf("\r\n") ; 
+        }
+
+
 
     }
 }
@@ -76,23 +89,54 @@ void main() {
 
 void initI2C(uint port_a, uint port_b){
     i2c_init(i2c0,CLK_SPEED) ; 
+    //enable dma tx and rx 
+    i2c0->hw->dma_cr = 0b11 ; 
+
     i2c_set_slave_mode(i2c0, true, I2C_SLAVE_ADDRESS) ; 
     gpio_set_function(port_a,GPIO_FUNC_I2C ) ; 
     gpio_set_function(port_b,GPIO_FUNC_I2C ) ; 
     gpio_pull_up(port_a) ; 
     gpio_pull_up(port_b) ; 
+
 }
 
 
-void dma_handler(void){ 
+void dma_handler_rx(void){ 
     hw_set_bits(&dma_hw->ints0,1<<dma_rx) ; 
     dma_channel_set_write_addr(dma_rx, rx_i2c,true) ; 
     dma_end_rx = true ; 
 }
 
+void dma_handler_tx(void){ 
+    hw_set_bits(&dma_hw->ints0,1<<dma_tx) ; 
+    dma_channel_set_write_addr(dma_tx, tx_i2c,true) ; 
+    dma_end_tx = true ; 
+}
+
+
+
 
 void dma_init_tx(){ 
-    
+    dma_tx =  dma_claim_unused_channel(true) ; 
+    dma_channel_config c_tx = dma_channel_get_default_config(dma_tx) ; 
+    channel_config_set_transfer_data_size(&c_tx,DMA_SIZE_8) ; 
+    channel_config_set_read_increment(&c_tx,false) ; 
+    channel_config_set_write_increment(&c_tx,true) ; 
+    channel_config_set_dreq(&c_tx, i2c_get_dreq(i2c0,true)) ; 
+    dma_channel_configure(
+        dma_tx, 
+        &c_tx,
+        &i2c_get_hw(i2c0)->data_cmd, 
+        tx_i2c, 
+        BUFFER_TX,
+        true  
+    ) ; 
+    dma_channel_set_irq0_enabled(dma_tx,true) ; 
+    dma_irqn_set_channel_enabled(DMA_IRQ_0,dma_tx,true) ; 
+    irq_set_exclusive_handler(DMA_IRQ_0,dma_handler_rx) ; 
+    irq_set_enabled(DMA_IRQ_0,true) ; 
+
+
 }
 
 
@@ -111,10 +155,9 @@ void dma_init_rx(){
         BUFFER_RX,
         true  
     ) ; 
-    i2c0->hw->dma_cr = 1 ; 
     dma_channel_set_irq0_enabled(dma_rx,true) ; 
     dma_irqn_set_channel_enabled(DMA_IRQ_0,dma_rx,true) ; 
-    irq_set_exclusive_handler(DMA_IRQ_0,dma_handler) ; 
+    irq_set_exclusive_handler(DMA_IRQ_0,dma_handler_rx) ; 
     irq_set_enabled(DMA_IRQ_0,true) ; 
 
 
