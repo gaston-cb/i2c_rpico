@@ -11,11 +11,13 @@
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
+#include "hardware/dma.h"
+
 #include "hardware/i2c.h" 
 #define CLK_SPEED 100000
 #define I2C_SLAVE_ADDRESS 70 
 #define BUFFER_TX 5 
-#define BUFFER_RX 5 
+#define BUFFER_RX 4 
 
 
 void initI2C(uint port_a, uint port_b) ; 
@@ -72,9 +74,6 @@ void main() {
 
 
 
-/// @brief 
-/// @param port_a 
-/// @param port_b 
 void initI2C(uint port_a, uint port_b){
     i2c_init(i2c0,CLK_SPEED) ; 
     i2c_set_slave_mode(i2c0, true, I2C_SLAVE_ADDRESS) ; 
@@ -86,7 +85,9 @@ void initI2C(uint port_a, uint port_b){
 
 
 void dma_handler(void){ 
-
+    hw_set_bits(&dma_hw->ints0,1<<dma_rx) ; 
+    dma_channel_set_write_addr(dma_rx, rx_i2c,true) ; 
+    dma_end_rx = true ; 
 }
 
 
@@ -96,6 +97,27 @@ void dma_init_tx(){
 
 
 void dma_init_rx(){ 
+    dma_rx =  dma_claim_unused_channel(true) ; 
+    dma_channel_config c_rx = dma_channel_get_default_config(dma_rx) ; 
+    channel_config_set_transfer_data_size(&c_rx,DMA_SIZE_8) ; 
+    channel_config_set_read_increment(&c_rx,false) ; 
+    channel_config_set_write_increment(&c_rx,true) ; 
+    channel_config_set_dreq(&c_rx, i2c_get_dreq(i2c0,false)) ; 
+    dma_channel_configure(
+        dma_rx, 
+        &c_rx,
+        rx_i2c, 
+        &i2c_get_hw(i2c0)->data_cmd, 
+        BUFFER_RX,
+        true  
+    ) ; 
+    i2c0->hw->dma_cr = 1 ; 
+    dma_channel_set_irq0_enabled(dma_rx,true) ; 
+    dma_irqn_set_channel_enabled(DMA_IRQ_0,dma_rx,true) ; 
+    irq_set_exclusive_handler(DMA_IRQ_0,dma_handler) ; 
+    irq_set_enabled(DMA_IRQ_0,true) ; 
+
+
 
 }
 
